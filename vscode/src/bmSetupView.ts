@@ -103,17 +103,176 @@ else
     echo "UV is already installed."
 fi
 
-# Install Basic Memory from local repository
-echo "Installing Basic Memory from local repository..."
-cd "${this.workspaceRoot}"
-if [ -f "pyproject.toml" ]; then
-    uv tool install --force --editable .
-    echo "Basic Memory installed successfully from local repository!"
+# Create workspace directories
+echo "Setting up workspace directories..."
+mkdir -p "${this.workspaceRoot}/.github/agents"
+mkdir -p "${this.workspaceRoot}/.memory-mcp"
+mkdir -p "${this.workspaceRoot}/.agent-projects"
+mkdir -p "${this.workspaceRoot}/.vscode"
+echo "Created workspace directories"
+
+# Discover and create agent project directories from .github/agents
+echo "Setting up agent project directories..."
+if [ -d "${this.workspaceRoot}/.github/agents" ]; then
+    for agent_file in "${this.workspaceRoot}/.github/agents"/*.agent.md; do
+        if [ -f "$agent_file" ]; then
+            agent_name=$(basename "$agent_file" .agent.md)
+            agent_dir="${this.workspaceRoot}/.agent-projects/$agent_name"
+            if [ ! -d "$agent_dir" ]; then
+                mkdir -p "$agent_dir"
+                echo "Created agent project directory: $agent_name"
+            else
+                echo "Agent project directory already exists: $agent_name"
+            fi
+        fi
+    done
 else
-    echo "Error: Not in Basic Memory repository root (pyproject.toml not found)"
-    echo "Please open the basic-memory repository folder in VS Code"
-    exit 1
+    echo "No .github/agents directory found, skipping agent project setup"
 fi
+
+# Initialize agent-controls.json if it doesn't exist
+if [ ! -f "${this.workspaceRoot}/.memory-mcp/agent-controls.json" ]; then
+    echo "Initializing agent-controls.json..."
+    cat > "${this.workspaceRoot}/.memory-mcp/agent-controls.json" << 'EOF'
+{
+  "agents": {}
+}
+EOF
+    echo "Created agent-controls.json"
+fi
+
+# Create config.json with agent projects dynamically
+echo "Creating config.json with agent projects..."
+cat > "${this.workspaceRoot}/.memory-mcp/config.json" << 'CONFIGEOF'
+{
+  "env": "dev",
+  "projects": {
+CONFIGEOF
+
+# Add each agent as a project entry
+first=true
+default_project=""
+for agent_file in "${this.workspaceRoot}/.github/agents"/*.agent.md; do
+    if [ -f "$agent_file" ]; then
+        agent_name=$(basename "$agent_file" .agent.md)
+        agent_path="${this.workspaceRoot}/.agent-projects/$agent_name"
+        
+        if [ "$first" = true ]; then
+            default_project="$agent_name"
+            echo "    \\"$agent_name\\": \\"$agent_path\\"" >> "${this.workspaceRoot}/.memory-mcp/config.json"
+            first=false
+        else
+            # Add comma before subsequent entries
+            sed -i '$ s/$/,/' "${this.workspaceRoot}/.memory-mcp/config.json"
+            echo "    \\"$agent_name\\": \\"$agent_path\\"" >> "${this.workspaceRoot}/.memory-mcp/config.json"
+        fi
+    fi
+done
+
+# Complete the config.json with the rest of the settings
+cat >> "${this.workspaceRoot}/.memory-mcp/config.json" << CONFIGEOF2
+  },
+  "default_project": "$default_project",
+  "default_project_mode": false,
+  "log_level": "INFO",
+  "database_backend": "sqlite",
+  "database_url": null,
+  "semantic_search_enabled": false,
+  "semantic_embedding_provider": "fastembed",
+  "semantic_embedding_model": "bge-small-en-v1.5",
+  "semantic_embedding_dimensions": null,
+  "semantic_embedding_batch_size": 64,
+  "semantic_vector_k": 100,
+  "db_pool_size": 20,
+  "db_pool_overflow": 40,
+  "db_pool_recycle": 180,
+  "sync_delay": 1000,
+  "watch_project_reload_interval": 300,
+  "update_permalinks_on_move": false,
+  "sync_changes": true,
+  "sync_thread_pool_size": 4,
+  "sync_max_concurrent_files": 10,
+  "kebab_filenames": false,
+  "disable_permalinks": false,
+  "skip_initialization_sync": false,
+  "format_on_save": false,
+  "formatter_command": null,
+  "formatters": {},
+  "formatter_timeout": 5.0,
+  "project_root": null,
+  "cloud_client_id": "client_01K6KWQPW6J1M8VV7R3TZP5A6M",
+  "cloud_domain": "https://eloquent-lotus-05.authkit.app",
+  "cloud_host": "https://cloud.basicmemory.com",
+  "cloud_mode": false,
+  "cloud_projects": {}
+}
+CONFIGEOF2
+echo "Created config.json with discovered agent projects"
+
+# Create .vscode/mcp.json for MCP configuration (always overwrite to ensure correct config)
+echo "Creating .vscode/mcp.json..."
+cat > "${this.workspaceRoot}/.vscode/mcp.json" << MCPEOF
+{
+  "servers": {
+    "basic-memory": {
+      "command": "${this.workspaceRoot}/.venv/bin/basic-memory",
+      "args": ["mcp"],
+      "type": "stdio",
+      "cwd": "${this.workspaceRoot}",
+      "env": {
+        "BASIC_MEMORY_REQUIRE_PROJECT": "true",
+        "BASIC_MEMORY_CONFIG_DIR": "${this.workspaceRoot}/.memory-mcp"
+      }
+    }
+  }
+}
+MCPEOF
+echo "Created .vscode/mcp.json with absolute paths"
+
+# Setup virtual environment
+echo "Setting up Python virtual environment..."
+if [ ! -d "${this.workspaceRoot}/.venv" ]; then
+    echo "Creating .venv..."
+    uv venv "${this.workspaceRoot}/.venv"
+    echo "Created .venv"
+else
+    echo ".venv already exists"
+fi
+
+# Install Basic Memory in editable mode from GitHub repository
+echo "Installing Basic Memory from GitHub (editable mode)..."
+cd "${this.workspaceRoot}"
+echo "Using Python: ${this.workspaceRoot}/.venv/bin/python"
+uv pip install --python "${this.workspaceRoot}/.venv/bin/python" --force-reinstall -e ${FORK_REPO}
+
+if [ $? -eq 0 ]; then
+    echo "Verifying basic-memory installation..."
+    if [ -f "${this.workspaceRoot}/.venv/bin/basic-memory" ]; then
+        echo "✓ Basic Memory installed successfully!"
+    else
+        echo "ERROR: basic-memory binary not found after installation"
+        echo "Checking installation location..."
+        "${this.workspaceRoot}/.venv/bin/python" -m pip show basic-memory
+        exit 1
+    fi
+else
+    echo "ERROR: Failed to install Basic Memory"
+    echo "Retrying with verbose output..."
+    uv pip install --python "${this.workspaceRoot}/.venv/bin/python" -v --force-reinstall -e ${FORK_REPO}
+    if [ $? -ne 0 ]; then
+        echo "FATAL: Installation failed. Please check the error messages above."
+        exit 1
+    fi
+fi
+
+echo ""
+echo "✓ Installation complete!"
+echo "✓ Virtual environment: ${this.workspaceRoot}/.venv"
+echo "✓ MCP config: ${this.workspaceRoot}/.vscode/mcp.json"
+echo ""
+echo "Next steps:"
+echo "1. Reload VS Code window (Ctrl+Shift+P -> 'Developer: Reload Window')"
+echo "2. Click 'Start' to launch the MCP server"
 `;
         return script.trim();
     }
@@ -132,7 +291,7 @@ fi
                 BASIC_MEMORY_CONFIG_DIR: `${this.workspaceRoot}/.memory-mcp`
             }
         });
-        this._serverTerminal.sendText('uv tool run --from . basic-memory mcp');
+        this._serverTerminal.sendText('.venv/bin/basic-memory mcp');
         this._serverTerminal.show();
     }
 
@@ -143,13 +302,25 @@ fi
             this._serverTerminal = undefined;
         }
 
-        // Kill all basic-memory processes for this project
+        // Kill only the MCP server for THIS workspace (multi-window safe)
+        // Reads PID from the .mcp.lock file and kills only that process
         const terminal = vscode.window.createTerminal({
             name: 'Stop Basic Memory',
             cwd: this.workspaceRoot
         });
         terminal.show();
-        terminal.sendText('pkill -f "basic-memory.*mcp" || echo "No basic-memory processes found"');
+        terminal.sendText(`
+if [ -f ".memory-mcp/.mcp.lock" ]; then
+    PID=$(cat .memory-mcp/.mcp.lock 2>/dev/null)
+    if [ -n "$PID" ]; then
+        kill $PID 2>/dev/null && echo "Stopped MCP server (PID $PID)" || echo "Process $PID not found"
+    else
+        echo "Lock file empty"
+    fi
+else
+    echo "No MCP server running in this workspace"
+fi
+        `.trim());
         
         // Auto-close terminal after a short delay
         setTimeout(() => {
@@ -164,7 +335,7 @@ fi
             cwd: this.workspaceRoot
         });
         terminal.show();
-        terminal.sendText('echo "=== UV Tool List ===" && uv tool list && echo "" && echo "=== Basic Memory Version ===" && uv tool run basic-memory --version');
+        terminal.sendText('echo "=== Virtual Environment ===" && ls -la .venv/bin/basic-memory 2>&1 && echo "" && echo "=== Basic Memory Version ===" && .venv/bin/basic-memory --version');
     }
 
     public syncDatabase(): void {
@@ -176,7 +347,7 @@ fi
             }
         });
         terminal.show();
-        terminal.sendText('uv run basic-memory doctor --local');
+        terminal.sendText('.venv/bin/basic-memory doctor --local');
     }
 
     private _getHtml(): string {

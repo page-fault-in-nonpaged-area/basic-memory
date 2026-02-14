@@ -120,11 +120,17 @@ class McpServerLock:
         """Acquire the lock, killing any existing server if necessary.
 
         This ensures only one MCP server runs per project (config directory).
+        In multi-window mode, lock becomes advisory (checks but doesn't kill).
 
         Raises:
             McpLockError: If lock cannot be acquired
         """
         logger.debug(f"Acquiring MCP server lock for {self.config_dir}")
+
+        # Check if multi-window mode is enabled
+        multi_window = os.environ.get("BASIC_MEMORY_ALLOW_MULTI_WINDOW", "").lower() in (
+            "true", "1", "yes"
+        )
 
         # Check for existing lock
         existing_pid = self._read_lock()
@@ -132,19 +138,27 @@ class McpServerLock:
         if existing_pid:
             # Check if the process is still running
             if self._process_exists(existing_pid):
-                logger.warning(
-                    f"Found running MCP server (PID {existing_pid}) for same config directory. "
-                    f"Terminating to ensure single server per project."
-                )
-                
-                # Kill the existing server to prevent conflicts
-                if self._kill_process(existing_pid):
-                    # Remove stale lock
-                    self._remove_lock()
-                else:
-                    raise McpLockError(
-                        f"Could not terminate existing MCP server (PID {existing_pid})"
+                if multi_window:
+                    # Advisory mode - log warning but don't kill
+                    logger.info(
+                        f"Multi-window mode: Found existing MCP server (PID {existing_pid}). "
+                        f"Both servers will run independently with SQLite WAL mode."
                     )
+                else:
+                    # Aggressive mode - kill existing server
+                    logger.warning(
+                        f"Found running MCP server (PID {existing_pid}) for same config directory. "
+                        f"Terminating to ensure single server per project."
+                    )
+                    
+                    # Kill the existing server to prevent conflicts
+                    if self._kill_process(existing_pid):
+                        # Remove stale lock
+                        self._remove_lock()
+                    else:
+                        raise McpLockError(
+                            f"Could not terminate existing MCP server (PID {existing_pid})"
+                        )
             else:
                 # Stale lock (process doesn't exist)
                 logger.info(f"Removing stale lock file (PID {existing_pid} not running)")

@@ -17,7 +17,6 @@ from loguru import logger
 
 from basic_memory import db
 from basic_memory.mcp.container import McpContainer, set_container
-from basic_memory.mcp.lock import McpServerLock
 from basic_memory.services.initialization import initialize_app
 
 # --- Project Enforcement ---
@@ -98,24 +97,11 @@ async def lifespan(app: FastMCP):
 
     logger.debug(f"Starting Basic Memory MCP server (mode={container.mode.name})")
 
-    # --- Project-Scoped Locking ---
-    # Trigger: Always enabled to prevent multiple servers per project
-    # Why: Multiple MCP servers accessing the same database causes:
-    #      - Write conflicts and data corruption
-    #      - Agents using wrong server with stale config
-    #      - Resource leaks (multiple file watchers, DB connections)
-    # Outcome: Kills any existing MCP server for this config directory
-    #          before starting, ensuring single server per project.
-    config_dir = container.config.config_dir
-    lock = McpServerLock(config_dir)
-    
-    try:
-        # Acquire lock (kills existing server if necessary)
-        lock.acquire()
-        logger.info(f"MCP server lock acquired for config directory: {config_dir}")
-    except Exception as e:
-        logger.error(f"Failed to acquire MCP server lock: {e}")
-        raise
+    # --- Cross-Project Isolation ---
+    # Each VSCode window runs its own MCP server process (stdio transport).
+    # Each workspace has its own .memory-mcp/ directory (via BASIC_MEMORY_CONFIG_DIR).
+    # No lock needed - each window is naturally isolated by process and config directory.
+    # Cross-project contamination is prevented by BASIC_MEMORY_REQUIRE_PROJECT enforcement.
 
     # --- Project Enforcement ---
     # Trigger: BASIC_MEMORY_REQUIRE_PROJECT env var is set to a truthy value
