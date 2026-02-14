@@ -1,5 +1,4 @@
 import * as vscode from 'vscode';
-import { AgentLoaderViewProvider } from './agentLoader';
 import { AgentListViewProvider } from './agentListView';
 import { BmSetupViewProvider } from './bmSetupView';
 
@@ -52,20 +51,6 @@ export function activate(context: vscode.ExtensionContext) {
         vscode.window.registerWebviewViewProvider(
             AgentListViewProvider.viewType,
             agentListProvider
-        )
-    );
-
-    // --- Agent Loader ---
-    const loaderProvider = new AgentLoaderViewProvider(
-        context.extensionUri,
-        workspaceRoot,
-        context.secrets,
-        agentListProvider
-    );
-    context.subscriptions.push(
-        vscode.window.registerWebviewViewProvider(
-            AgentLoaderViewProvider.viewType,
-            loaderProvider
         )
     );
 }

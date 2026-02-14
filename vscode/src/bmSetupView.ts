@@ -239,11 +239,19 @@ else
     echo ".venv already exists"
 fi
 
-# Install Basic Memory in editable mode from GitHub repository
-echo "Installing Basic Memory from GitHub (editable mode)..."
+# Install Basic Memory from GitHub repository
+echo "Installing Basic Memory from GitHub..."
 cd "${this.workspaceRoot}"
 echo "Using Python: ${this.workspaceRoot}/.venv/bin/python"
-uv pip install --python "${this.workspaceRoot}/.venv/bin/python" --force-reinstall -e ${FORK_REPO}
+
+# Check if we're in the basic-memory source directory
+if [ -f "${this.workspaceRoot}/pyproject.toml" ] && grep -q "name = \\"basic-memory\\"" "${this.workspaceRoot}/pyproject.toml" 2>/dev/null; then
+    echo "Detected basic-memory source directory - installing in editable mode..."
+    uv pip install --python "${this.workspaceRoot}/.venv/bin/python" --force-reinstall -e "${this.workspaceRoot}"
+else
+    echo "Installing from GitHub repository..."
+    uv pip install --python "${this.workspaceRoot}/.venv/bin/python" --force-reinstall ${FORK_REPO}
+fi
 
 if [ $? -eq 0 ]; then
     echo "Verifying basic-memory installation..."
@@ -258,7 +266,11 @@ if [ $? -eq 0 ]; then
 else
     echo "ERROR: Failed to install Basic Memory"
     echo "Retrying with verbose output..."
-    uv pip install --python "${this.workspaceRoot}/.venv/bin/python" -v --force-reinstall -e ${FORK_REPO}
+    if [ -f "${this.workspaceRoot}/pyproject.toml" ] && grep -q "name = \\"basic-memory\\"" "${this.workspaceRoot}/pyproject.toml" 2>/dev/null; then
+        uv pip install --python "${this.workspaceRoot}/.venv/bin/python" -v --force-reinstall -e "${this.workspaceRoot}"
+    else
+        uv pip install --python "${this.workspaceRoot}/.venv/bin/python" -v --force-reinstall ${FORK_REPO}
+    fi
     if [ $? -ne 0 ]; then
         echo "FATAL: Installation failed. Please check the error messages above."
         exit 1
@@ -422,9 +434,6 @@ fi
         margin-bottom: 0;
         padding: 8px 10px;
     }
-    .btn-row .btn span {
-        display: none;
-    }
 </style>
 </head>
 <body>
@@ -433,17 +442,9 @@ fi
             <i data-lucide="download" class="icon"></i>
             <span>Install</span>
         </button>
-        <button class="btn btn-primary" onclick="doStart()" title="Start">
-            <i data-lucide="play" class="icon"></i>
-            <span>Start</span>
-        </button>
-        <button class="btn btn-secondary" onclick="doStop()" title="Stop">
-            <i data-lucide="square" class="icon"></i>
-            <span>Stop</span>
-        </button>
-        <button class="btn btn-secondary" onclick="doSyncDb()" title="Sync DB">
-            <i data-lucide="database" class="icon"></i>
-            <span>Sync DB</span>
+        <button class="btn btn-secondary" onclick="doSyncDb()" title="Diagnose">
+            <i data-lucide="stethoscope" class="icon"></i>
+            <span>Diagnose</span>
         </button>
     </div>
 
@@ -453,14 +454,6 @@ fi
 
     function doInstall() {
         vscode.postMessage({ type: 'install' });
-    }
-
-    function doStart() {
-        vscode.postMessage({ type: 'start' });
-    }
-
-    function doStop() {
-        vscode.postMessage({ type: 'stop' });
     }
 
     function doSyncDb() {

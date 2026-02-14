@@ -301,6 +301,38 @@ async def test_write_note_with_tag_array_from_bug_report(app, test_project):
 
 
 @pytest.mark.asyncio
+async def test_write_note_appends_human_review_banner_when_required(app, test_project):
+    """Test that write_note appends Human Input Required banner when requested."""
+    await write_note.fn(
+        project=test_project.name,
+        title="Needs Review",
+        directory="escalations",
+        content="# Problem\n\nA deploy issue needs human input.",
+        requires_human_review=True,
+    )
+
+    note_content = await read_note.fn("escalations/needs-review", project=test_project.name)
+    assert ">>> Human Input Required <<<" in note_content
+
+
+@pytest.mark.asyncio
+async def test_write_note_returns_error_when_review_decision_missing_for_mcp_invocation(
+    app, test_project
+):
+    """Test that MCP-style invocations require explicit requires_human_review decision."""
+    result = await write_note.fn(
+        project=test_project.name,
+        title="Missing Decision",
+        directory="escalations",
+        content="# Problem\n\nNo explicit decision provided.",
+        context=object(),
+    )
+
+    assert "# Error" in result
+    assert "requires_human_review" in result
+
+
+@pytest.mark.asyncio
 async def test_write_note_verbose(app, test_project):
     """Test creating a new note.
 

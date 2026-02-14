@@ -58,6 +58,7 @@ await write_note("Note", "Content", "folder")  # ✗ Error
 await write_note(
     title="Topic",
     content="# Topic\n## Observations\n- [category] fact\n## Relations\n- relates_to [[Other]]",
+    requires_human_review=False,
     folder="notes",
     project="main"  # Required unless default_project_mode=true
 )
@@ -124,6 +125,7 @@ Reference entities that don't exist yet:
 await write_note(
     title="Login Flow",
     content="## Relations\n- requires [[OAuth Provider]]",  # Doesn't exist yet
+    requires_human_review=False,
     folder="auth",
     project="main"
 )
@@ -132,6 +134,7 @@ await write_note(
 await write_note(
     title="OAuth Provider",
     content="# OAuth Provider\n...",
+    requires_human_review=False,
     folder="auth",
     project="main"
 )
@@ -214,6 +217,7 @@ except:
 response = await write_note(
     title="New Topic",
     content="## Relations\n- relates_to [[Future Topic]]",
+    requires_human_review=False,
     folder="notes",
     project="main"
 )
@@ -242,6 +246,7 @@ response = await write_note(
 await write_note(
     title="DB Choice",
     content="""# DB Choice\n## Decision\nUse PostgreSQL\n## Observations\n- [requirement] ACID compliance #reliability\n- [decision] PostgreSQL over MySQL\n## Relations\n- implements [[Data Architecture]]""",
+    requires_human_review=False,
     folder="decisions",
     project="main"
 )
@@ -251,7 +256,7 @@ await write_note(
 
 ```python
 # Link bidirectionally
-await write_note(title="API Auth", content="## Relations\n- part_of [[API Design]]", folder="api", project="main")
+await write_note(title="API Auth", content="## Relations\n- part_of [[API Design]]", requires_human_review=False, folder="api", project="main")
 await edit_note(identifier="API Design", operation="append", content="\n- includes [[API Auth]]", project="main")
 
 # Search and build context
@@ -263,7 +268,7 @@ context = await build_context(url=f"memory://{results[0].permalink}", project="m
 
 | Tool | Purpose | Key Params |
 |------|---------|------------|
-| `write_note` | Create/update | title, content, folder, project |
+| `write_note` | Create/update | title, content, folder, requires_human_review, project |
 | `read_note` | Read content | identifier, project |
 | `edit_note` | Modify existing | identifier, operation, content, project |
 | `search_notes` | Find notes | query, project |

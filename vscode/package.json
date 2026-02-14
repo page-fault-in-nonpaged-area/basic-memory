@@ -31,11 +31,6 @@
     "views": {
       "bm-controls": [
         {
-          "id": "agentLoader",
-          "name": "Agent Loader",
-          "type": "webview"
-        },
-        {
           "id": "bmSetup",
           "name": "Memory Controls",
           "type": "webview"

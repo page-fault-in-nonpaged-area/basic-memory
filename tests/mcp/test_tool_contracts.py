@@ -45,7 +45,15 @@ EXPECTED_TOOL_SIGNATURES: dict[str, list[str]] = {
         "status",
     ],
     "view_note": ["identifier", "project", "page", "page_size"],
-    "write_note": ["title", "content", "directory", "project", "tags", "note_type"],
+    "write_note": [
+        "title",
+        "content",
+        "directory",
+        "requires_human_review",
+        "project",
+        "tags",
+        "note_type",
+    ],
 }
 
 

@@ -43,6 +43,29 @@ export class AgentListViewProvider implements vscode.WebviewViewProvider {
         private readonly workspaceRoot: string
     ) {}
 
+    private getConfiguredProjects(): Map<string, string> {
+        const configPath = path.join(this.workspaceRoot, '.memory-mcp', 'config.json');
+        const projects = new Map<string, string>();
+        
+        try {
+            if (fs.existsSync(configPath)) {
+                const content = fs.readFileSync(configPath, 'utf-8');
+                const config = JSON.parse(content);
+                if (config.projects && typeof config.projects === 'object') {
+                    for (const [name, projectPath] of Object.entries(config.projects)) {
+                        if (typeof projectPath === 'string') {
+                            projects.set(name, projectPath);
+                        }
+                    }
+                }
+            }
+        } catch (err) {
+            console.error('Failed to read config.json:', err);
+        }
+        
+        return projects;
+    }
+
     public resolveWebviewView(
         webviewView: vscode.WebviewView,
         _context: vscode.WebviewViewResolveContext,
@@ -64,8 +87,31 @@ export class AgentListViewProvider implements vscode.WebviewViewProvider {
                     break;
 
                 case 'openFile':
-                    const doc = await vscode.workspace.openTextDocument(msg.path);
-                    await vscode.window.showTextDocument(doc);
+                    try {
+                        // Reconstruct original path (sanitization removed apostrophes)
+                        // Search for the file by checking if it exists
+                        let actualPath = msg.path;
+                        if (!fs.existsSync(actualPath)) {
+                            // If sanitized path doesn't exist, search for original
+                            const dir = path.dirname(actualPath);
+                            const basename = path.basename(actualPath);
+                            if (fs.existsSync(dir)) {
+                                const files = fs.readdirSync(dir);
+                                const match = files.find(f => 
+                                    f.replace(/'/g, '') === basename
+                                );
+                                if (match) {
+                                    actualPath = path.join(dir, match);
+                                }
+                            }
+                        }
+                        const uri = vscode.Uri.file(actualPath);
+                        const doc = await vscode.workspace.openTextDocument(uri);
+                        await vscode.window.showTextDocument(doc);
+                    } catch (err) {
+                        vscode.window.showErrorMessage(`Failed to open file: ${msg.path}\n${err}`);
+                        console.error('Failed to open file:', msg.path, err);
+                    }
                     break;
 
                 case 'deleteMemory':
@@ -76,7 +122,22 @@ export class AgentListViewProvider implements vscode.WebviewViewProvider {
                     );
                     if (confirm === 'Delete') {
                         try {
-                            fs.unlinkSync(msg.path);
+                            // Reconstruct original path
+                            let actualPath = msg.path;
+                            if (!fs.existsSync(actualPath)) {
+                                const dir = path.dirname(actualPath);
+                                const basename = path.basename(actualPath);
+                                if (fs.existsSync(dir)) {
+                                    const files = fs.readdirSync(dir);
+                                    const match = files.find(f => 
+                                        f.replace(/'/g, '') === basename
+                                    );
+                                    if (match) {
+                                        actualPath = path.join(dir, match);
+                                    }
+                                }
+                            }
+                            fs.unlinkSync(actualPath);
                             vscode.window.showInformationMessage(`Deleted: ${msg.filename}`);
                             this.sendAgentData();
                         } catch (err) {
@@ -184,6 +245,11 @@ export class AgentListViewProvider implements vscode.WebviewViewProvider {
         );
     }
 
+    private sanitizePath(filepath: string): string {
+        // Remove dangerous characters that interfere with HTML rendering
+        return filepath.replace(/'/g, '');
+    }
+
     private sendAgentData(): void {
         const agents = this.getAgentData();
         this._view?.webview.postMessage({
@@ -194,7 +260,10 @@ export class AgentListViewProvider implements vscode.WebviewViewProvider {
 
     private getAgentData(): AgentData[] {
         const agentsDir = path.join(this.workspaceRoot, '.github', 'agents');
-        const memoryBaseDir = path.join(this.workspaceRoot, '.agent-projects');
+        const defaultMemoryBaseDir = path.join(this.workspaceRoot, '.agent-projects');
+        
+        // Read configured projects from config.json
+        const configuredProjects = this.getConfiguredProjects();
 
         if (!fs.existsSync(agentsDir)) {
             return [];
@@ -209,6 +278,9 @@ export class AgentListViewProvider implements vscode.WebviewViewProvider {
             const agentName = file.replace('.agent.md', '');
             const promptPath = path.join(agentsDir, file);
 
+            // Use configured project path if available, otherwise fall back to default
+            const memoryBaseDir = configuredProjects.get(agentName) || defaultMemoryBaseDir;
+
             const stats = this.getAgentStats(agentName, memoryBaseDir);
             const memories = this.getMemories(agentName, memoryBaseDir);
             const questionFiles = memories
@@ -217,10 +289,21 @@ export class AgentListViewProvider implements vscode.WebviewViewProvider {
 
             const agentControl = this.getAgentControl(agentName);
 
+            // Sanitize paths before sending to webview
+            const sanitizedMemories = memories.map(m => ({
+                ...m,
+                filepath: this.sanitizePath(m.filepath),
+                filename: this.sanitizePath(m.filename)
+            }));
+            const sanitizedQuestionFiles = questionFiles.map(qf => ({
+                ...qf,
+                filepath: this.sanitizePath(qf.filepath)
+            }));
+
             agents.push({
                 name: agentName,
                 hasQuestions: questionFiles.length > 0,
-                questionFiles,
+                questionFiles: sanitizedQuestionFiles,
                 stats,
                 memoryCount: memories.length,
                 memoryBytes: memories.reduce((sum, m) => {
@@ -230,8 +313,8 @@ export class AgentListViewProvider implements vscode.WebviewViewProvider {
                         return sum;
                     }
                 }, 0),
-                memories,
-                promptPath,
+                memories: sanitizedMemories,
+                promptPath: this.sanitizePath(promptPath),
                 enabled: agentControl.enabled,
                 paused: agentControl.paused
             });
@@ -307,7 +390,11 @@ export class AgentListViewProvider implements vscode.WebviewViewProvider {
     }
 
     private getAgentStats(agentName: string, memoryBaseDir: string): AgentStats | null {
-        const statsPath = path.join(memoryBaseDir, agentName, '.stats.json');
+        // For configured projects, memoryBaseDir IS the project directory
+        // For default layout, we need to append the agent name
+        const statsPath = memoryBaseDir.includes(agentName) 
+            ? path.join(memoryBaseDir, '.stats.json')
+            : path.join(memoryBaseDir, agentName, '.stats.json');
         if (!fs.existsSync(statsPath)) return null;
 
         try {
@@ -319,7 +406,11 @@ export class AgentListViewProvider implements vscode.WebviewViewProvider {
     }
 
     private getMemories(agentName: string, memoryBaseDir: string): MemoryItem[] {
-        const memoryDir = path.join(memoryBaseDir, agentName);
+        // For configured projects, memoryBaseDir IS the project directory
+        // For default layout, we need to append the agent name
+        const memoryDir = memoryBaseDir.includes(agentName) || fs.existsSync(path.join(memoryBaseDir, '.stats.json'))
+            ? memoryBaseDir
+            : path.join(memoryBaseDir, agentName);
         if (!fs.existsSync(memoryDir)) return [];
 
         try {
@@ -418,7 +509,16 @@ export class AgentListViewProvider implements vscode.WebviewViewProvider {
 
         const filename = `${slug}.md`;
 
-        const memoryDir = path.join(this.workspaceRoot, '.agent-projects', agentName);
+        // Use configured project path if available
+        const configuredProjects = this.getConfiguredProjects();
+        const defaultMemoryBaseDir = path.join(this.workspaceRoot, '.agent-projects');
+        const memoryBaseDir = configuredProjects.get(agentName) || defaultMemoryBaseDir;
+        
+        // For configured projects, memoryBaseDir IS the project directory
+        // For default layout, we need to append the agent name
+        const memoryDir = memoryBaseDir.includes(agentName) || configuredProjects.has(agentName)
+            ? memoryBaseDir
+            : path.join(memoryBaseDir, agentName);
         const memoryPath = path.join(memoryDir, filename);
 
         if (!fs.existsSync(memoryDir)) {
@@ -585,6 +685,7 @@ export class AgentListViewProvider implements vscode.WebviewViewProvider {
         font-size: 12px;
         font-family: var(--vscode-font-family);
         text-align: left;
+        transition: background 0.15s ease;
     }
     .action-btn:hover {
         background: var(--vscode-button-secondaryHoverBackground);
@@ -700,6 +801,7 @@ export class AgentListViewProvider implements vscode.WebviewViewProvider {
         border-radius: 0;
         cursor: pointer;
         font-size: 11px;
+        transition: background 0.15s ease;
     }
     .add-btn:hover {
         background: var(--vscode-button-hoverBackground);
@@ -719,6 +821,7 @@ export class AgentListViewProvider implements vscode.WebviewViewProvider {
         border-radius: 0;
         font-size: 12px;
         cursor: pointer;
+        transition: background 0.15s ease;
     }
     .memory-item:hover {
         background: var(--vscode-list-hoverBackground);

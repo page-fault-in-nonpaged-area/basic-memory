@@ -1,5 +1,6 @@
 """Write note tool for Basic Memory MCP server."""
 
+import re
 from typing import List, Union, Optional
 
 from loguru import logger
@@ -14,6 +15,25 @@ from basic_memory.utils import parse_tags, validate_project_path
 # Define TagType as a Union that can accept either a string or a list of strings or None
 TagType = Union[List[str], str, None]
 
+HUMAN_INPUT_BANNER = """=============================
+>>> Human Input Required <<<
+============================="""
+
+
+def _apply_human_review_banner(content: str, requires_human_review: bool) -> str:
+    """Apply or remove the human-input banner based on explicit review decision."""
+    banner_pattern = re.compile(
+        r"\n*={29}\n>>> Human Input Required <<<\n={29}\n*", re.MULTILINE
+    )
+    content_without_banner = re.sub(banner_pattern, "\n", content).rstrip()
+
+    if not requires_human_review:
+        return content_without_banner
+
+    if content_without_banner:
+        return f"{content_without_banner}\n\n{HUMAN_INPUT_BANNER}"
+    return HUMAN_INPUT_BANNER
+
 
 @mcp.tool(
     description="Create or update a markdown note. Returns a markdown formatted summary of the semantic content.",
@@ -22,6 +42,7 @@ async def write_note(
     title: str,
     content: str,
     directory: str,
+    requires_human_review: bool | None = None,
     project: Optional[str] = None,
     tags: list[str] | str | None = None,
     note_type: str = "note",
@@ -60,6 +81,9 @@ async def write_note(
         directory: Directory path relative to project root where the file should be saved.
                    Use forward slashes (/) as separators. Use "/" or "" to write to project root.
                    Examples: "notes", "projects/2025", "research/ml", "/" (root)
+        requires_human_review: Whether this note requires human input. Agents must explicitly
+                      decide true/false when writing notes through MCP.
+                      If true, the tool appends the Human Input Required banner.
         project: Project name to write to. Optional - server will resolve using the
                 hierarchy above. If unknown, use list_memory_projects() to discover
                 available projects.
@@ -89,6 +113,7 @@ async def write_note(
             project="my-research",
             title="Meeting Notes",
             directory="meetings",
+            requires_human_review=False,
             content="# Weekly Standup\\n\\n- [decision] Use SQLite for storage #tech"
         )
 
@@ -97,6 +122,7 @@ async def write_note(
             project="work-project",
             title="API Design",
             directory="specs",
+            requires_human_review=False,
             content="# REST API Specification\\n\\n- implements [[Authentication]]",
             tags=["api", "design"],
             note_type="guide"
@@ -107,6 +133,7 @@ async def write_note(
             project="my-research",
             title="Meeting Notes",
             directory="meetings",
+            requires_human_review=False,
             content="# Weekly Standup\\n\\n- [decision] Use PostgreSQL instead #tech"
         )
 
@@ -116,8 +143,25 @@ async def write_note(
     """
     async with get_client() as client:
         logger.info(
-            f"MCP tool call tool=write_note project={project} directory={directory}, title={title}, tags={tags}"
+            f"MCP tool call tool=write_note project={project} directory={directory}, title={title}, tags={tags}, requires_human_review={requires_human_review}"
         )
+
+        # Trigger: Tool call comes from MCP and omits explicit review decision.
+        # Why: Agents must intentionally decide whether a note needs human review.
+        # Outcome: Rejects ambiguous writes with a clear parameter requirement error.
+        if requires_human_review is None and context is not None:
+            return (
+                "# Error\n\n"
+                "Parameter 'requires_human_review' is required and must be true or false. "
+                "Set it to true for escalation notes that need human input, or false for "
+                "standard notes."
+            )
+
+        # Direct/internal Python invocations may omit context; keep backwards compatibility there.
+        if requires_human_review is None:
+            requires_human_review = False
+
+        content = _apply_human_review_banner(content, requires_human_review)
 
         # Get and validate the project (supports optional project parameter)
         active_project = await get_active_project(client, project, context)
@@ -229,6 +273,9 @@ async def write_note(
 
         if tag_list:
             summary.append(f"\n## Tags\n- {', '.join(tag_list)}")
+
+        summary.append("\n## Human Review")
+        summary.append(f"- Required: {requires_human_review}")
 
         # Log the response with structured data
         logger.info(

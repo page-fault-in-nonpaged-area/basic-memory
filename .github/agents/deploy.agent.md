@@ -35,7 +35,7 @@ You have access to a persistent knowledge base via the Basic Memory MCP server.
 
 - `search_notes(query, project="deploy")` - Search for relevant information
 - `read_note(identifier, project="deploy")` - Read specific notes
-- `write_note(title, content, directory="experience", tags=[], project="deploy")` - Create/update notes
+- `write_note(title, content, directory="experience", requires_human_review=false, tags=[], project="deploy")` - Create/update notes
 - `recent_activity(type="entity", depth=1, timeframe="1 week", project="deploy")` - See recent changes
 - `list_directory(dir_name="/", project="deploy")` - Browse the deploy project directory
 
@@ -55,6 +55,7 @@ write_note(
     title="K8s Context Switch Failed",
     content="## Problem\n...\n\n## Solution\n...",
     directory="experience",
+    requires_human_review=False,
     tags=["kubernetes", "troubleshooting"],
     project="deploy"
 )
@@ -71,12 +72,7 @@ Notes are stored in the `deploy` project with descriptive titles and tags.
 ### Raising Questions
 If you encounter a problem you **cannot solve** and need human input:
 1. Create a note with clear problem description
-2. Add the following banner at the end of the file:
-```
-=============================
->>> Human Input Required <<<
-=============================
-```
+2. Call `write_note(..., requires_human_review=True)` so MCP appends the Human Input banner automatically
 3. Leave resolution section empty or marked as "Awaiting guidance"
 
 The human will update the note with the answer, and your next run will find it via search.
