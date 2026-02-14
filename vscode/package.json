@@ -1,0 +1,95 @@
+{
+  "name": "bm-controls",
+  "displayName": "Basic Memory Control Panel",
+  "description": "Control panel for Basic Memory — install, start, and manage agent memory",
+  "version": "0.2.0",
+  "publisher": "page-fault-in-nonpaged-area",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/page-fault-in-nonpaged-area/basic-memory.git"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "workspaceContains:.github/agents"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "bm-controls",
+          "title": "Basic Memory",
+          "icon": "resources/agent-icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "bm-controls": [
+        {
+          "id": "agentLoader",
+          "name": "Agent Loader",
+          "type": "webview"
+        },
+        {
+          "id": "bmSetup",
+          "name": "Memory Controls",
+          "type": "webview"
+        },
+        {
+          "id": "agentList",
+          "name": "Agents Memories",
+          "type": "webview"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "bm-controls.installBasicMemory",
+        "title": "Install Basic Memory",
+        "category": "Basic Memory"
+      },
+      {
+        "command": "bm-controls.startBasicMemory",
+        "title": "Start Basic Memory",
+        "category": "Basic Memory"
+      },
+      {
+        "command": "bm-controls.stopBasicMemory",
+        "title": "Stop Basic Memory",
+        "category": "Basic Memory"
+      },
+      {
+        "command": "bm-controls.checkStatus",
+        "title": "Check Status",
+        "category": "Basic Memory"
+      },
+      {
+        "command": "bm-controls.syncDatabase",
+        "title": "Sync Database",
+        "category": "Basic Memory"
+      }
+    ],
+    "menus": {}
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "eslint src --ext ts",
+    "package": "vsce package --allow-missing-repository --no-dependencies"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.85.0",
+    "@typescript-eslint/eslint-plugin": "^7.0.0",
+    "@typescript-eslint/parser": "^7.0.0",
+    "@vscode/vsce": "^2.22.0",
+    "eslint": "^8.56.0",
+    "typescript": "^5.3.0"
+  }
+}

@@ -5,7 +5,7 @@ from loguru import logger
 from fastmcp import Context
 from mcp.server.fastmcp.exceptions import ToolError
 
-from basic_memory.mcp.project_context import get_active_project
+from basic_memory.mcp.project_context import get_active_project, check_agent_controls, OperationType
 from basic_memory.mcp.server import mcp
 from basic_memory.mcp.async_client import get_client
 
@@ -222,6 +222,12 @@ async def delete_note(
         )
 
         active_project = await get_active_project(client, project, context)
+
+        # Check agent controls (pause/disable)
+        try:
+            check_agent_controls(active_project.name, OperationType.WRITE)
+        except PermissionError as e:
+            return str(e)
 
         # Import here to avoid circular import
         from basic_memory.mcp.clients import KnowledgeClient

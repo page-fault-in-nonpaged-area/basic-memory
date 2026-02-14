@@ -7,7 +7,7 @@ from loguru import logger
 from fastmcp import Context
 
 from basic_memory.mcp.async_client import get_client
-from basic_memory.mcp.project_context import get_active_project
+from basic_memory.mcp.project_context import get_active_project, check_agent_controls, OperationType
 from basic_memory.mcp.server import mcp
 from basic_memory.mcp.tools.search import search_notes
 from basic_memory.schemas.memory import memory_url_path
@@ -79,6 +79,12 @@ async def read_note(
     async with get_client() as client:
         # Get and validate the project
         active_project = await get_active_project(client, project, context)
+
+        # Check agent controls (disabled check only - reads allowed when paused)
+        try:
+            check_agent_controls(active_project.name, OperationType.READ)
+        except PermissionError as e:
+            return str(e)
 
         # Validate identifier to prevent path traversal attacks
         # We need to check both the raw identifier and the processed path

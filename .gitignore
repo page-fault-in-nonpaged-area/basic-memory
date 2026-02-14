@@ -58,3 +58,26 @@ claude-output
 .mcpregistry_*
 /.testmondata
 .benchmarks/
+
+# Memory MCP config (keep agent-controls, exclude DB and runtime files)
+.memory-mcp/memory.db
+.memory-mcp/memory.db-shm
+.memory-mcp/memory.db-wal
+.memory-mcp/config.json
+.memory-mcp/logs/
+.memory-mcp/.basic-memory/
+.memory-mcp/.mcp.lock
+
+# Per-agent project data (managed by basic-memory, not committed)
+.agent-projects/
+
+# VS Code extension
+vscode/node_modules/
+vscode/out/
+vscode/webview-ui/node_modules/
+vscode/webview-ui/dist/
+vscode/*.vsix
+
+# Test fixtures (exclude from Basic Memory sync, but keep in git)
+# Use glob pattern to match all files under test-int/fixtures recursively
+test-int/fixtures/**

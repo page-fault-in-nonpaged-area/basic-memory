@@ -7,7 +7,7 @@ from loguru import logger
 from fastmcp import Context
 
 from basic_memory.mcp.async_client import get_client
-from basic_memory.mcp.project_context import get_active_project
+from basic_memory.mcp.project_context import get_active_project, check_agent_controls, OperationType
 from basic_memory.mcp.server import mcp
 from basic_memory.schemas.search import (
     SearchItemType,
@@ -433,6 +433,12 @@ async def search_notes(
     async with get_client() as client:
         active_project = await get_active_project(client, project, context)
 
+        # Check agent controls (disabled check only - reads allowed when paused)
+        try:
+            check_agent_controls(active_project.name, OperationType.READ)
+        except PermissionError as e:
+            return str(e)
+
         logger.info(f"Searching for {search_query} in project {active_project.name}")
 
         try:
@@ -500,6 +506,13 @@ async def search_by_metadata(
 
     async with get_client() as client:
         active_project = await get_active_project(client, project, context)
+
+        # Check agent controls (disabled check only - reads allowed when paused)
+        try:
+            check_agent_controls(active_project.name, OperationType.READ)
+        except PermissionError as e:
+            return str(e)
+
         logger.info(
             f"Structured search in project {active_project.name} filters={filters} limit={limit} offset={offset}"
         )

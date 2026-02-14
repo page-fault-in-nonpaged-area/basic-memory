@@ -1,0 +1,12 @@
+{
+  "agents": {
+    "build": {
+      "enabled": true,
+      "paused": false
+    },
+    "deploy": {
+      "enabled": true,
+      "paused": false
+    }
+  }
+}

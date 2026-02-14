@@ -18,7 +18,7 @@ from sqlalchemy.exc import IntegrityError
 from basic_memory import db
 from basic_memory.config import BasicMemoryConfig, ConfigManager
 from basic_memory.file_utils import has_frontmatter
-from basic_memory.ignore_utils import load_bmignore_patterns, should_ignore_path
+from basic_memory.ignore_utils import load_gitignore_patterns, should_ignore_path
 from basic_memory.markdown import EntityParser, MarkdownProcessor
 from basic_memory.models import Entity, Project
 from basic_memory.repository import (
@@ -137,12 +137,18 @@ class SyncService:
         self.project_repository = project_repository
         self.search_service = search_service
         self.file_service = file_service
-        # Load ignore patterns once at initialization for performance
-        self._ignore_patterns = load_bmignore_patterns()
+        # Cache ignore patterns per-project path for performance (respects both .bmignore and .gitignore)
+        self._ignore_patterns_cache: Dict[Path, Set[str]] = {}
         # Circuit breaker: track file failures to prevent infinite retry loops
         # Use OrderedDict for LRU behavior with bounded size to prevent unbounded memory growth
         self._file_failures: OrderedDict[str, FileFailureInfo] = OrderedDict()
         self._max_tracked_failures = 100  # Limit failure cache size
+
+    def _get_ignore_patterns(self, project_path: Path) -> Set[str]:
+        """Get or load ignore patterns for a project path."""
+        if project_path not in self._ignore_patterns_cache:
+            self._ignore_patterns_cache[project_path] = load_gitignore_patterns(project_path)
+        return self._ignore_patterns_cache[project_path]
 
     async def _should_skip_file(self, path: str) -> bool:
         """Check if file should be skipped due to repeated failures.
@@ -1133,8 +1139,8 @@ class SyncService:
                     rel_path = abs_path.relative_to(directory).as_posix()
 
                     # Apply ignore patterns (same as scan_directory)
-                    if should_ignore_path(abs_path, directory, self._ignore_patterns):
-                        logger.trace(f"Ignoring path per .bmignore: {rel_path}")
+                    if should_ignore_path(abs_path, directory, self._get_ignore_patterns(directory)):
+                        logger.trace(f"Ignoring path per .bmignore/.gitignore: {rel_path}")
                         continue
 
                     file_paths.append(rel_path)
@@ -1188,8 +1194,8 @@ class SyncService:
             entry_path = Path(entry.path)
 
             # Check ignore patterns
-            if should_ignore_path(entry_path, directory, self._ignore_patterns):
-                logger.trace(f"Ignoring path per .bmignore: {entry_path.relative_to(directory)}")
+            if should_ignore_path(entry_path, directory, self._get_ignore_patterns(directory)):
+                logger.trace(f"Ignoring path per .bmignore/.gitignore: {entry_path.relative_to(directory)}")
                 continue
 
             if entry.is_dir(follow_symlinks=False):

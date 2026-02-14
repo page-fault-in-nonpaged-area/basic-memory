@@ -6,7 +6,7 @@ from loguru import logger
 from fastmcp import Context
 
 from basic_memory.mcp.async_client import get_client
-from basic_memory.mcp.project_context import get_active_project, add_project_metadata
+from basic_memory.mcp.project_context import get_active_project, check_agent_controls, OperationType, add_project_metadata
 from basic_memory.mcp.server import mcp
 
 
@@ -214,6 +214,12 @@ async def edit_note(
     """
     async with get_client() as client:
         active_project = await get_active_project(client, project, context)
+
+        # Check agent controls (pause/disable)
+        try:
+            check_agent_controls(active_project.name, OperationType.WRITE)
+        except PermissionError as e:
+            return str(e)
 
         logger.info("MCP tool call", tool="edit_note", identifier=identifier, operation=operation)
 

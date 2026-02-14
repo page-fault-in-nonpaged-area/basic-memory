@@ -6,7 +6,7 @@ from loguru import logger
 from fastmcp import Context
 
 from basic_memory.mcp.async_client import get_client
-from basic_memory.mcp.project_context import get_active_project
+from basic_memory.mcp.project_context import get_active_project, check_agent_controls, OperationType
 from basic_memory.mcp.server import mcp
 from basic_memory.schemas.base import TimeFrame
 from basic_memory.schemas.memory import (
@@ -102,6 +102,12 @@ async def build_context(
     async with get_client() as client:
         # Get the active project using the new stateless approach
         active_project = await get_active_project(client, project, context)
+
+        # Check agent controls (disabled check only - reads allowed when paused)
+        try:
+            check_agent_controls(active_project.name, OperationType.READ)
+        except PermissionError as e:
+            return str(e)
 
         # Import here to avoid circular import
         from basic_memory.mcp.clients import MemoryClient

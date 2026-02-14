@@ -349,8 +349,16 @@ class BasicMemoryConfig(BaseSettings):
 
         This is the single database that will store all knowledge data
         across all projects.
+
+        When BASIC_MEMORY_CONFIG_DIR is set, the database is co-located with
+        the config directory. This enables project-portable setups where
+        the DB lives inside the project (e.g. .agent-memory/memory.db).
         """
-        database_path = Path.home() / DATA_DIR_NAME / APP_DATABASE_NAME
+        # Co-locate DB with config when config dir is overridden
+        if config_dir := os.getenv("BASIC_MEMORY_CONFIG_DIR"):
+            database_path = Path(config_dir) / APP_DATABASE_NAME
+        else:
+            database_path = Path.home() / DATA_DIR_NAME / APP_DATABASE_NAME
         if not database_path.exists():  # pragma: no cover
             database_path.parent.mkdir(parents=True, exist_ok=True)
             database_path.touch()
@@ -397,6 +405,18 @@ class BasicMemoryConfig(BaseSettings):
 
     @property
     def data_dir_path(self):
+        return Path.home() / DATA_DIR_NAME
+
+    @property
+    def config_dir(self) -> Path:
+        """Get the config directory path.
+
+        Returns:
+            Path to the config directory (either from BASIC_MEMORY_CONFIG_DIR
+            env var or default ~/.basic-memory)
+        """
+        if config_dir := os.getenv("BASIC_MEMORY_CONFIG_DIR"):
+            return Path(config_dir)
         return Path.home() / DATA_DIR_NAME
 
 

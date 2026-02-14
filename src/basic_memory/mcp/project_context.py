@@ -8,6 +8,9 @@ The resolve_project_parameter function is a thin wrapper for backwards
 compatibility with existing MCP tools.
 """
 
+import json
+import os
+from enum import Enum
 from typing import Optional, List
 from httpx import AsyncClient
 from httpx._types import (
@@ -20,6 +23,88 @@ from basic_memory.config import ConfigManager
 from basic_memory.project_resolver import ProjectResolver
 from basic_memory.schemas.project_info import ProjectItem, ProjectList
 from basic_memory.schemas.v2 import ProjectResolveResponse
+
+
+class OperationType(Enum):
+    """Type of memory operation for agent control checks."""
+    READ = "read"   # search, read_note, build_context, list_directory
+    WRITE = "write"  # write_note, edit_note, delete_note, move_note
+
+
+def read_agent_controls() -> dict:
+    """Read agent controls from .agent-memory/agent-controls.json.
+    
+    This config file controls agent memory access:
+    - enabled: false = all memory operations blocked
+    - paused: true = only read operations allowed, writes blocked
+    
+    Returns:
+        Dict with 'agents' key containing per-agent controls.
+        Returns empty dict if file doesn't exist or is invalid.
+    """
+    config_dir = os.environ.get("BASIC_MEMORY_CONFIG_DIR", "")
+    if not config_dir:
+        return {}
+    
+    controls_path = os.path.join(config_dir, "agent-controls.json")
+    try:
+        if os.path.exists(controls_path):
+            with open(controls_path, "r") as f:
+                return json.load(f)
+    except (json.JSONDecodeError, OSError) as e:
+        logger.warning(f"Failed to read agent-controls.json: {e}")
+    return {}
+
+
+def check_agent_controls(
+    project_name: str,
+    operation: OperationType,
+) -> None:
+    """Check if an agent's memory operation is allowed.
+    
+    Reads from .agent-memory/agent-controls.json to check:
+    - If agent is disabled: all operations blocked
+    - If agent is paused: only write operations blocked
+    
+    Args:
+        project_name: The project/agent name to check
+        operation: The type of operation (READ or WRITE)
+    
+    Raises:
+        PermissionError: If the operation is not allowed
+    """
+    controls = read_agent_controls()
+    agents = controls.get("agents", {})
+    
+    # Extract agent name from project name (e.g., "agent-build" -> "build")
+    agent_name = project_name
+    if project_name.startswith("agent-"):
+        agent_name = project_name[6:]
+    
+    agent_controls = agents.get(agent_name, {"enabled": True, "paused": False})
+    enabled = agent_controls.get("enabled", True)
+    paused = agent_controls.get("paused", False)
+    
+    if not enabled:
+        raise PermissionError(
+            f"# Memory Disabled\n\n"
+            f"Agent '{agent_name}' memory is **disabled**.\n\n"
+            f"All memory operations are blocked. To re-enable:\n"
+            f"1. Open the VSCode extension sidebar\n"
+            f"2. Find agent '{agent_name}' in the Agents Memories section\n"
+            f"3. Click the 'Enable' button"
+        )
+    
+    if paused and operation == OperationType.WRITE:
+        raise PermissionError(
+            f"# Memory Paused\n\n"
+            f"Agent '{agent_name}' memory is **paused** (read-only mode).\n\n"
+            f"You can still search and read memories, but writing is blocked.\n\n"
+            f"To resume writing:\n"
+            f"1. Open the VSCode extension sidebar\n"
+            f"2. Find agent '{agent_name}' in the Agents Memories section\n"
+            f"3. Click the 'Resume' button"
+        )
 
 
 async def resolve_project_parameter(
@@ -110,9 +195,19 @@ async def get_active_project(
     if not resolved_project:
         project_names = await get_project_names(client, headers)
         raise ValueError(
-            "No project specified. "
-            "Either set 'default_project_mode=true' in config, or use 'project' argument.\n"
-            f"Available projects: {project_names}"
+            'Missing required parameter "project".\n'
+            "\n"
+            "Every tool call must include a project parameter to identify\n"
+            "which agent's memory to operate on. This prevents concurrent\n"
+            "subagents from contaminating each other's memory.\n"
+            "\n"
+            "Usage:\n"
+            '  write_note(project="agent-build", title="...", ...)\n'
+            '  search_notes(project="agent-build", query="...")\n'
+            "\n"
+            f"Available projects: {', '.join(project_names)}\n"
+            "\n"
+            'Tip: Always use project="agent-{your-name}" in every tool call.'
         )
 
     project = resolved_project

@@ -6,7 +6,7 @@ from loguru import logger
 from fastmcp import Context
 
 from basic_memory.mcp.async_client import get_client
-from basic_memory.mcp.project_context import get_active_project
+from basic_memory.mcp.project_context import get_active_project, check_agent_controls, OperationType
 from basic_memory.mcp.server import mcp
 
 
@@ -64,6 +64,12 @@ async def list_directory(
     """
     async with get_client() as client:
         active_project = await get_active_project(client, project, context)
+
+        # Check agent controls (disabled check only - reads allowed when paused)
+        try:
+            check_agent_controls(active_project.name, OperationType.READ)
+        except PermissionError as e:
+            return str(e)
 
         logger.debug(
             f"Listing directory '{dir_name}' in project {project} with depth={depth}, glob='{file_name_glob}'"

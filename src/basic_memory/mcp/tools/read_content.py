@@ -15,7 +15,7 @@ from PIL import Image as PILImage
 from fastmcp import Context
 from mcp.server.fastmcp.exceptions import ToolError
 
-from basic_memory.mcp.project_context import get_active_project
+from basic_memory.mcp.project_context import get_active_project, check_agent_controls, OperationType
 from basic_memory.mcp.server import mcp
 from basic_memory.mcp.async_client import get_client
 from basic_memory.mcp.tools.utils import call_get, resolve_entity_id
@@ -204,6 +204,12 @@ async def read_content(
 
     async with get_client() as client:
         active_project = await get_active_project(client, project, context)
+
+        # Check agent controls (disabled check only - reads allowed when paused)
+        try:
+            check_agent_controls(active_project.name, OperationType.READ)
+        except PermissionError as e:
+            return {"type": "error", "error": str(e)}
 
         url = memory_url_path(path)
 
