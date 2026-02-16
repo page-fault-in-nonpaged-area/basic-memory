@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 
-const FORK_REPO = 'git+https://github.com/page-fault-in-nonpaged-area/basic-memory';
+const FORK_REPO = 'git+https://github.com/page-fault-in-nonpaged-area/basic-memory@fork-extensions';
 
 export class BmSetupViewProvider implements vscode.WebviewViewProvider {
     public static readonly viewType = 'bmSetup';
