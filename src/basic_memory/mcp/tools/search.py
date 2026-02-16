@@ -395,6 +395,15 @@ async def search_notes(
         # Explicit project specification
         results = await search_notes("project planning", project="my-project")
     """
+    # Fork extension: When called via MCP, project must be specified
+    if context is not None and project is None:
+        return (
+            "# Error\n\n"
+            "Parameter 'project' is required when calling MCP tools. "
+            "Specify the project name (e.g., project='backend', project='build'). "
+            "If you don't know which projects exist, use list_memory_projects() first."
+        )
+
     # Avoid mutable-default-argument footguns. Treat None as "no filter".
     types = types or []
     entity_types = entity_types or []

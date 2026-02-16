@@ -32,7 +32,7 @@ async def list_directory(
                Higher values show subdirectory contents recursively
         file_name_glob: Optional glob pattern for filtering file names
                        Examples: "*.md", "*meeting*", "project_*"
-        project: Project name to list directory from. Optional - server will resolve using hierarchy.
+        project: Project name to list directory from. Required when called through MCP.
                 If unknown, use list_memory_projects() to discover available projects.
         context: Optional FastMCP context for performance caching.
 
@@ -61,6 +61,15 @@ async def list_directory(
     Raises:
         ToolError: If project doesn't exist or directory path is invalid
     """
+    # Fork extension: When called via MCP, project must be specified
+    if context is not None and project is None:
+        return (
+            "# Error\n\n"
+            "Parameter 'project' is required when calling MCP tools. "
+            "Specify the project name (e.g., project='backend', project='build'). "
+            "If you don't know which projects exist, use list_memory_projects() first."
+        )
+
     async with get_project_client(project, context) as (client, active_project):
         logger.debug(
             f"Listing directory '{dir_name}' in project {project} with depth={depth}, glob='{file_name_glob}'"

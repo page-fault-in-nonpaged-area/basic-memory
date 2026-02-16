@@ -211,6 +211,15 @@ async def edit_note(
         search_notes() first to find the correct identifier. The tool provides detailed
         error messages with suggestions if operations fail.
     """
+    # Fork extension: When called via MCP, project must be specified
+    if context is not None and project is None:
+        return (
+            "# Error\n\n"
+            "Parameter 'project' is required when calling MCP tools. "
+            "Specify the project name (e.g., project='backend', project='build'). "
+            "If you don't know which projects exist, use list_memory_projects() first."
+        )
+
     async with get_project_client(project, context) as (client, active_project):
         logger.info("MCP tool call", tool="edit_note", identifier=identifier, operation=operation)
 

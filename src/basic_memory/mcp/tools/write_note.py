@@ -4,6 +4,11 @@ from typing import List, Union, Optional
 
 from loguru import logger
 
+from basic_memory.mcp.fork_extensions import (
+    OperationType,
+    check_agent_controls,
+    apply_human_review_banner,
+)
 from basic_memory.mcp.project_context import get_project_client, add_project_metadata
 from basic_memory.mcp.server import mcp
 from fastmcp import Context
@@ -21,6 +26,7 @@ async def write_note(
     title: str,
     content: str,
     directory: str,
+    requires_human_review: bool | None = None,
     project: Optional[str] = None,
     tags: list[str] | str | None = None,
     note_type: str = "note",
@@ -60,9 +66,11 @@ async def write_note(
         directory: Directory path relative to project root where the file should be saved.
                    Use forward slashes (/) as separators. Use "/" or "" to write to project root.
                    Examples: "notes", "projects/2025", "research/ml", "/" (root)
-        project: Project name to write to. Optional - server will resolve using the
-                hierarchy above. If unknown, use list_memory_projects() to discover
-                available projects.
+        requires_human_review: Whether this note requires human input. Agents must explicitly
+                              decide true/false when writing notes through MCP.
+                              If true, the tool appends the Human Input Required banner.
+        project: Project name to write to. Required when called through MCP.
+                If unknown, use list_memory_projects() to discover available projects.
         tags: Tags to categorize the note. Can be a list of strings, a comma-separated string, or None.
               Note: If passing from external MCP clients, use a string format (e.g. "tag1,tag2,tag3")
         note_type: Type of note to create (stored in frontmatter). Defaults to "note".
@@ -79,11 +87,12 @@ async def write_note(
         - Session tracking metadata for project awareness
 
     Examples:
-        # Create a simple note (uses default project automatically)
+        # Create a simple note
         write_note(
             project="my-research",
             title="Meeting Notes",
             directory="meetings",
+            requires_human_review=False,
             content="# Weekly Standup\\n\\n- [decision] Use SQLite for storage #tech"
         )
 
@@ -92,6 +101,7 @@ async def write_note(
             project="work-project",
             title="API Design",
             directory="specs",
+            requires_human_review=False,
             content="# REST API Specification\\n\\n- implements [[Authentication]]",
             tags=["api", "design"],
             note_type="guide"
@@ -102,6 +112,7 @@ async def write_note(
             project="my-research",
             title="Meeting Notes",
             directory="meetings",
+            requires_human_review=False,
             content="# Weekly Standup\\n\\n- [decision] Use PostgreSQL instead #tech"
         )
 
@@ -111,8 +122,42 @@ async def write_note(
     """
     async with get_project_client(project, context) as (client, active_project):
         logger.info(
-            f"MCP tool call tool=write_note project={active_project.name} directory={directory}, title={title}, tags={tags}"
+            f"MCP tool call tool=write_note project={active_project.name} directory={directory}, title={title}, tags={tags}, requires_human_review={requires_human_review}"
         )
+
+        # Trigger: Tool call comes from MCP and omits explicit project or review decision.
+        # Why: Agents must intentionally decide project scope and whether a note needs human review.
+        # Outcome: Rejects ambiguous writes with clear parameter requirement errors.
+        if context is not None:
+            if project is None:
+                return (
+                    "# Error\n\n"
+                    "Parameter 'project' is required when calling MCP tools. "
+                    "Specify the project name (e.g., project='backend', project='build'). "
+                    "If you don't know which projects exist, use list_memory_projects() first."
+                )
+            if requires_human_review is None:
+                return (
+                    "# Error\n\n"
+                    "Parameter 'requires_human_review' is required and must be true or false. "
+                    "Set it to true for escalation notes that need human input, or false for "
+                    "standard notes."
+                )
+
+        # Direct/internal Python invocations may omit context; keep backwards compatibility there.
+        if requires_human_review is None:
+            requires_human_review = False
+
+        # Check agent controls (pause/disable)
+        try:
+            check_agent_controls(
+                active_project.name, active_project.home, OperationType.WRITE
+            )
+        except PermissionError as e:
+            return str(e)
+
+        # Apply human review banner if requested
+        content = apply_human_review_banner(content, requires_human_review)
 
         # Normalize "/" to empty string for root directory (must happen before validation)
         if directory == "/":
