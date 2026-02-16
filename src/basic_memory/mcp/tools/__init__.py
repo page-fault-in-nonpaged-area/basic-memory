@@ -21,6 +21,7 @@ from basic_memory.mcp.tools.canvas import canvas
 from basic_memory.mcp.tools.list_directory import list_directory
 from basic_memory.mcp.tools.edit_note import edit_note
 from basic_memory.mcp.tools.move_note import move_note
+from basic_memory.mcp.tools.immediate_memory import read_immediate_memory, write_immediate_memory
 from basic_memory.mcp.tools.project_management import (
     list_memory_projects,
     create_memory_project,
@@ -46,6 +47,7 @@ __all__ = [
     "list_memory_projects",
     "move_note",
     "read_content",
+    "read_immediate_memory",
     "read_note",
     "release_notes",
     "read_note_ui",
@@ -58,5 +60,6 @@ __all__ = [
     "search_notes",
     "search_notes_ui",
     "view_note",
+    "write_immediate_memory",
     "write_note",
 ]

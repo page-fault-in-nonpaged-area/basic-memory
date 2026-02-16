@@ -150,6 +150,10 @@ export class AgentListViewProvider implements vscode.WebviewViewProvider {
                     await this.createNewMemory(msg.agentName);
                     break;
 
+                case 'openImmediateMemory':
+                    await this.openImmediateMemory(msg.agentName);
+                    break;
+
                 case 'refresh':
                     this.sendAgentData();
                     break;
@@ -428,6 +432,7 @@ export class AgentListViewProvider implements vscode.WebviewViewProvider {
 
         for (const entry of entries) {
             if (entry.name.startsWith('.')) continue;
+            if (entry.name === '_immediate.md') continue;  // shown as permanent UI entry
 
             const fullPath = path.join(dir, entry.name);
             if (entry.isDirectory()) {
@@ -493,6 +498,44 @@ export class AgentListViewProvider implements vscode.WebviewViewProvider {
         if (bytes < 1024) return `${bytes} B`;
         if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
         return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    }
+
+    private async openImmediateMemory(agentName: string): Promise<void> {
+        const configuredProjects = this.getConfiguredProjects();
+        const defaultMemoryBaseDir = path.join(this.workspaceRoot, '.agent-projects');
+        const memoryBaseDir = configuredProjects.get(agentName) || defaultMemoryBaseDir;
+
+        const memoryDir = memoryBaseDir.includes(agentName) || configuredProjects.has(agentName)
+            ? memoryBaseDir
+            : path.join(memoryBaseDir, agentName);
+        const immediatePath = path.join(memoryDir, '_immediate.md');
+
+        if (!fs.existsSync(memoryDir)) {
+            fs.mkdirSync(memoryDir, { recursive: true });
+        }
+
+        // Create with template if it doesn't exist yet
+        if (!fs.existsSync(immediatePath)) {
+            const template = [
+                '---',
+                'title: Immediate Memory',
+                'type: immediate',
+                'permalink: _immediate',
+                'tags: [immediate-memory]',
+                '---',
+                '',
+                '# Immediate Memory',
+                '',
+                '> Context-limited scratchpad that survives context compaction.',
+                '> Keep under 5k tokens. Overwrite freely.',
+                '',
+                ''
+            ].join('\n');
+            fs.writeFileSync(immediatePath, template, 'utf-8');
+        }
+
+        const doc = await vscode.workspace.openTextDocument(immediatePath);
+        await vscode.window.showTextDocument(doc);
     }
 
     private async createNewMemory(agentName: string): Promise<void> {
@@ -870,6 +913,14 @@ export class AgentListViewProvider implements vscode.WebviewViewProvider {
     .mini-btn.delete:hover {
         color: var(--vscode-errorForeground);
     }
+    .memory-item.immediate {
+        border-left: 2px solid var(--vscode-charts-purple, #b180d7);
+        opacity: 0.85;
+    }
+    .memory-item.immediate .icon {
+        color: var(--vscode-charts-purple, #b180d7);
+        opacity: 1;
+    }
     .memory-item.needs-input {
         border-left: 2px solid var(--vscode-notificationsWarningIcon-foreground);
     }
@@ -1041,6 +1092,16 @@ export class AgentListViewProvider implements vscode.WebviewViewProvider {
                 </div>
                 \${agent.memories.length > 0 ? \`
                 <div class="memory-list">
+                    <div class="memory-item immediate" onclick="openImmediateMemory('\${agent.name}')">
+                        <i data-lucide="message-circle-more" class="icon" style="width:14px;height:14px;"></i>
+                        <span class="memory-name">Immediate memory</span>
+                        <span class="memory-date"></span>
+                        <div class="memory-actions" onclick="event.stopPropagation()">
+                            <button class="mini-btn" onclick="openImmediateMemory('\${agent.name}')" title="Edit">
+                                <i data-lucide="pencil" style="width:13px;height:13px;"></i>
+                            </button>
+                        </div>
+                    </div>
                     \${agent.memories.map(mem => \`
                     <div class="memory-item\${mem.needsHumanInput ? ' needs-input' : ''}" onclick="openFile('\${mem.filepath}')">
                         <i data-lucide="\${mem.needsHumanInput ? 'alert-circle' : 'file-text'}" class="icon\${mem.needsHumanInput ? ' warning-icon' : ''}" style="width:14px;height:14px;"></i>
@@ -1057,7 +1118,21 @@ export class AgentListViewProvider implements vscode.WebviewViewProvider {
                     </div>
                     \`).join('')}
                 </div>
-                \` : '<div class="info-line">No memories yet</div>'}
+                \` : \`
+                <div class="memory-list">
+                    <div class="memory-item immediate" onclick="openImmediateMemory('\${agent.name}')">
+                        <i data-lucide="message-circle-more" class="icon" style="width:14px;height:14px;"></i>
+                        <span class="memory-name">Immediate memory</span>
+                        <span class="memory-date"></span>
+                        <div class="memory-actions" onclick="event.stopPropagation()">
+                            <button class="mini-btn" onclick="openImmediateMemory('\${agent.name}')" title="Edit">
+                                <i data-lucide="pencil" style="width:13px;height:13px;"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div class="info-line">No other memories yet</div>
+                \`}
             </div>
         </div>
     </div>
@@ -1081,6 +1156,10 @@ export class AgentListViewProvider implements vscode.WebviewViewProvider {
 
     function openFile(path) {
         vscode.postMessage({ type: 'openFile', path });
+    }
+
+    function openImmediateMemory(agentName) {
+        vscode.postMessage({ type: 'openImmediateMemory', agentName });
     }
 
     function deleteMemory(path, filename) {
