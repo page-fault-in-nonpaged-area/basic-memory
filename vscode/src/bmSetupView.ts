@@ -278,6 +278,27 @@ else
 fi
 
 echo ""
+
+# Register agent projects with basic-memory
+echo "Registering agent projects with Basic Memory..."
+if [ -d "${this.workspaceRoot}/.github/agents" ]; then
+    for agent_file in "${this.workspaceRoot}/.github/agents"/*.agent.md; do
+        if [ -f "$agent_file" ]; then
+            agent_name=$(basename "$agent_file" .agent.md)
+            agent_path="${this.workspaceRoot}/.agent-projects/$agent_name"
+            
+            echo "Registering project: $agent_name -> $agent_path"
+            "${this.workspaceRoot}/.venv/bin/basic-memory" project add "$agent_name" "$agent_path" 2>&1 || {
+                echo "Warning: Failed to register project $agent_name (may already exist)"
+            }
+        fi
+    done
+    echo "✓ Agent projects registered"
+else
+    echo "No .github/agents directory found, skipping project registration"
+fi
+
+echo ""
 echo "✓ Installation complete!"
 echo "✓ Virtual environment: ${this.workspaceRoot}/.venv"
 echo "✓ MCP config: ${this.workspaceRoot}/.vscode/mcp.json"

@@ -1,11 +1,15 @@
 # Makefile for Basic Memory Fork Extensions
 # Manages VSCode extension build and installation
 
-.PHONY: help vscode-build vscode-install vscode-clean vscode-dev
+.PHONY: help mcp-build mcp-install vscode-build vscode-install vscode-clean vscode-dev dev
 
 # Default target
 help:
 	@echo "Basic Memory Fork Extensions - Makefile"
+	@echo ""
+	@echo "MCP Targets:"
+	@echo "  mcp-build       - Install MCP server in editable mode"
+	@echo "  mcp-install     - Alias for mcp-build"
 	@echo ""
 	@echo "VSCode Extension Targets:"
 	@echo "  vscode-build    - Build the VSCode extension (.vsix package)"
@@ -13,10 +17,24 @@ help:
 	@echo "  vscode-clean    - Clean build artifacts"
 	@echo "  vscode-dev      - Build and install in one step"
 	@echo ""
+	@echo "Combined:"
+	@echo "  dev             - Build MCP + VSCode extension and install both"
+	@echo ""
 	@echo "Usage:"
-	@echo "  make vscode-build    # Builds vscode/bm-controls-<version>.vsix"
-	@echo "  make vscode-install  # Installs the .vsix into VSCode"
-	@echo "  make vscode-dev      # Quick build + install"
+	@echo "  make mcp-build       # Install MCP server from fork"
+	@echo "  make vscode-dev      # Build + install VSCode extension"
+	@echo "  make dev             # Build everything"
+
+# Build/install the forked MCP server
+mcp-build:
+	@echo "=== Building MCP Server ==="
+	uv pip install -e ".[dev]"
+	uv sync
+	@echo ""
+	@echo "✓ MCP server installed in editable mode"
+	@echo "  Run: basic-memory --version"
+
+mcp-install: mcp-build
 
 # Build the VSCode extension
 vscode-build:
@@ -62,3 +80,10 @@ vscode-dev: vscode-build vscode-install
 	@echo ""
 	@echo "=== Development Build Complete ==="
 	@echo "Extension is ready to use. Reload VSCode to activate."
+
+# Build everything: MCP server + VSCode extension
+dev: mcp-build vscode-dev
+	@echo ""
+	@echo "=== Full Development Build Complete ==="
+	@echo "MCP server installed. VSCode extension installed."
+	@echo "Reload VSCode for extension changes."
