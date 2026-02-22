@@ -130,6 +130,16 @@ else
     echo "No .github/agents directory found, skipping agent project setup"
 fi
 
+# Set up gemini-engineer project directory if GEMINI.md is present
+if [ -f "${this.workspaceRoot}/GEMINI.md" ]; then
+    gemini_dir="${this.workspaceRoot}/.agent-projects/gemini-engineer"
+    if [ ! -d "$gemini_dir" ]; then
+        mkdir -p "$gemini_dir"
+        echo "Created gemini-engineer project directory (detected GEMINI.md)"
+    else
+        echo "gemini-engineer project directory already exists"
+    fi
+fi
 # Initialize agent-controls.json if it doesn't exist
 if [ ! -f "${this.workspaceRoot}/.memory-mcp/agent-controls.json" ]; then
     echo "Initializing agent-controls.json..."
@@ -168,6 +178,20 @@ for agent_file in "${this.workspaceRoot}/.github/agents"/*.agent.md; do
         fi
     fi
 done
+
+# Add gemini-engineer to config.json if GEMINI.md exists
+if [ -f "${this.workspaceRoot}/GEMINI.md" ]; then
+    gemini_path="${this.workspaceRoot}/.agent-projects/gemini-engineer"
+    mkdir -p "$gemini_path"
+    if [ "$first" = true ]; then
+        default_project="gemini-engineer"
+        echo "    \\"gemini-engineer\\": \\"$gemini_path\\"" >> "${this.workspaceRoot}/.memory-mcp/config.json"
+        first=false
+    else
+        sed -i '$ s/$/,/' "${this.workspaceRoot}/.memory-mcp/config.json"
+        echo "    \\"gemini-engineer\\": \\"$gemini_path\\"" >> "${this.workspaceRoot}/.memory-mcp/config.json"
+    fi
+fi
 
 # Complete the config.json with the rest of the settings
 cat >> "${this.workspaceRoot}/.memory-mcp/config.json" << CONFIGEOF2
@@ -296,6 +320,17 @@ if [ -d "${this.workspaceRoot}/.github/agents" ]; then
     echo "✓ Agent projects registered"
 else
     echo "No .github/agents directory found, skipping project registration"
+fi
+
+# Register gemini-engineer project if GEMINI.md exists
+if [ -f "${this.workspaceRoot}/GEMINI.md" ]; then
+    echo "Detected GEMINI.md — setting up gemini-engineer project..."
+    gemini_path="${this.workspaceRoot}/.agent-projects/gemini-engineer"
+    mkdir -p "$gemini_path"
+    "${this.workspaceRoot}/.venv/bin/basic-memory" project add "gemini-engineer" "$gemini_path" 2>&1 || {
+        echo "Warning: gemini-engineer project may already exist"
+    }
+    echo "✓ gemini-engineer project ready"
 fi
 
 echo ""

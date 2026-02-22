@@ -94,91 +94,6 @@ context = await build_context(
 )
 ```
 
-## Immediate Memory (Context Survival)
-
-**Purpose**: Small scratchpad (~5k tokens) that survives context compaction. Use this to maintain working state across context windows.
-
-**Not processed through knowledge graph** — raw markdown file (`_immediate.md`).
-
-### When to Use
-
-✅ **Good for immediate memory:**
-- "What was I doing?" state restoration
-- Current task progress tracking
-- Behavioral notes ("user prefers concise answers")
-- Temporary counters or finger-counting
-- Emotional/tone observations
-- Recent decisions that haven't solidified
-
-❌ **Not for immediate memory:**
-- Permanent knowledge (use `write_note` instead)
-- Large content (5k token limit)
-- Semantic observations/relations (no graph processing)
-
-### Reading Immediate Memory
-
-**Read at conversation start** to restore state:
-
-```python
-# First thing in new context window
-immediate = await read_immediate_memory(project="main")
-# Parse to understand: what was I doing? Any preferences?
-```
-
-### Writing Immediate Memory
-
-**Overwrite entire content** (not append):
-
-```python
-# Update state after significant progress
-await write_immediate_memory(
-    content="""# Working State
-
-## Current Task
-Implementing OAuth flow - step 3 of 5
-
-## Progress
-- ✓ Database schema
-- ✓ API endpoints
-- → Token generation (in progress)
-
-## User Preferences
-- Prefers TypeScript over JavaScript
-- Wants type safety emphasized
-
-## Next Session
-Test token refresh logic
-""",
-    project="main"
-)
-```
-
-### Best Practices
-
-**Read early, write often:**
-```python
-# 1. Read at session start
-state = await read_immediate_memory(project="main")
-
-# 2. Update after key milestones
-# e.g., after completing a task, learning a preference
-await write_immediate_memory(content=new_state, project="main")
-
-# 3. Keep it concise - you have ~5k tokens
-```
-
-**What to track:**
-- Current task + progress ("step 3 of 5")
-- User preferences discovered this session
-- Open questions or decisions pending
-- Emotional context (frustration, excitement)
-- Finger-counting or iteration state
-
-**Token budget:**
-- Limit: 5,000 tokens (~20,000 characters)
-- Write tool will reject if exceeded
-- Keep lean — archive mature content to regular notes
-
 ## Knowledge Graph Essentials
 
 ### Observations
@@ -354,8 +269,6 @@ context = await build_context(url=f"memory://{results[0].permalink}", project="m
 | `search_notes` | Find notes | query, project |
 | `build_context` | Graph traversal | url, depth, project |
 | `recent_activity` | Recent changes | timeframe, project |
-| `read_immediate_memory` | Read scratchpad | project |
-| `write_immediate_memory` | Update scratchpad | content, project |
 | `list_memory_projects` | Show projects | (none) |
 
 ## memory:// URL Format

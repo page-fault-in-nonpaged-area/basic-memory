@@ -19,7 +19,6 @@ interface AgentData {
     memoryCount: number;
     memoryBytes: number;
     memories: MemoryItem[];
-    promptPath: string;
     enabled: boolean;
     paused: boolean;
 }
@@ -150,10 +149,6 @@ export class AgentListViewProvider implements vscode.WebviewViewProvider {
                     await this.createNewMemory(msg.agentName);
                     break;
 
-                case 'openImmediateMemory':
-                    await this.openImmediateMemory(msg.agentName);
-                    break;
-
                 case 'refresh':
                     this.sendAgentData();
                     break;
@@ -168,16 +163,7 @@ export class AgentListViewProvider implements vscode.WebviewViewProvider {
             }
         });
 
-        // Watch for file changes
-        const agentsPattern = new vscode.RelativePattern(
-            this.workspaceRoot,
-            '.github/agents/**/*'
-        );
-        const watcher = vscode.workspace.createFileSystemWatcher(agentsPattern);
-        watcher.onDidCreate(() => this.sendAgentData());
-        watcher.onDidDelete(() => this.sendAgentData());
-        watcher.onDidChange(() => this.sendAgentData());
-
+        // Watch .agent-projects/ for new/deleted agent subdirectories
         const memoryPattern = new vscode.RelativePattern(
             this.workspaceRoot,
             '.agent-projects/**/*'
@@ -186,6 +172,12 @@ export class AgentListViewProvider implements vscode.WebviewViewProvider {
         memoryWatcher.onDidCreate(() => this.sendAgentData());
         memoryWatcher.onDidDelete(() => this.sendAgentData());
         memoryWatcher.onDidChange(() => this.sendAgentData());
+
+        // Watch GEMINI.md — its appearance/removal affects gemini-engineer project
+        const geminiPattern = new vscode.RelativePattern(this.workspaceRoot, 'GEMINI.md');
+        const geminiWatcher = vscode.workspace.createFileSystemWatcher(geminiPattern);
+        geminiWatcher.onDidCreate(() => this.sendAgentData());
+        geminiWatcher.onDidDelete(() => this.sendAgentData());
     }
 
     public refresh(): void {
@@ -263,30 +255,39 @@ export class AgentListViewProvider implements vscode.WebviewViewProvider {
     }
 
     private getAgentData(): AgentData[] {
-        const agentsDir = path.join(this.workspaceRoot, '.github', 'agents');
-        const defaultMemoryBaseDir = path.join(this.workspaceRoot, '.agent-projects');
-        
-        // Read configured projects from config.json
-        const configuredProjects = this.getConfiguredProjects();
+        const agentProjectsDir = path.join(this.workspaceRoot, '.agent-projects');
 
-        if (!fs.existsSync(agentsDir)) {
+        // --- GEMINI.md auto-project ---
+        // Trigger: GEMINI.md exists in workspace root
+        // Why: gemini-engineer uses the same memory system; auto-create its project dir
+        // Outcome: gemini-engineer appears in the list without manual setup
+        const geminiMd = path.join(this.workspaceRoot, 'GEMINI.md');
+        const geminiProjectDir = path.join(agentProjectsDir, 'gemini-engineer');
+        if (fs.existsSync(geminiMd) && !fs.existsSync(geminiProjectDir)) {
+            try {
+                fs.mkdirSync(geminiProjectDir, { recursive: true });
+            } catch {
+                // ignore
+            }
+        }
+
+        if (!fs.existsSync(agentProjectsDir)) {
             return [];
         }
 
-        const files = fs.readdirSync(agentsDir);
         const agents: AgentData[] = [];
+        const entries = fs.readdirSync(agentProjectsDir, { withFileTypes: true });
 
-        for (const file of files) {
-            if (!file.endsWith('.agent.md')) continue;
+        for (const entry of entries) {
+            // Agent names are subdirectories of .agent-projects/
+            if (!entry.isDirectory()) continue;
+            if (entry.name.startsWith('.')) continue;
 
-            const agentName = file.replace('.agent.md', '');
-            const promptPath = path.join(agentsDir, file);
+            const agentName = entry.name;
+            const memoryDir = path.join(agentProjectsDir, agentName);
 
-            // Use configured project path if available, otherwise fall back to default
-            const memoryBaseDir = configuredProjects.get(agentName) || defaultMemoryBaseDir;
-
-            const stats = this.getAgentStats(agentName, memoryBaseDir);
-            const memories = this.getMemories(agentName, memoryBaseDir);
+            const stats = this.getAgentStats(agentName, memoryDir);
+            const memories = this.getMemories(agentName, memoryDir);
             const questionFiles = memories
                 .filter(m => m.needsHumanInput)
                 .map(m => ({ filepath: m.filepath, title: m.title || m.filename }));
@@ -318,7 +319,6 @@ export class AgentListViewProvider implements vscode.WebviewViewProvider {
                     }
                 }, 0),
                 memories: sanitizedMemories,
-                promptPath: this.sanitizePath(promptPath),
                 enabled: agentControl.enabled,
                 paused: agentControl.paused
             });
@@ -432,7 +432,6 @@ export class AgentListViewProvider implements vscode.WebviewViewProvider {
 
         for (const entry of entries) {
             if (entry.name.startsWith('.')) continue;
-            if (entry.name === '_immediate.md') continue;  // shown as permanent UI entry
 
             const fullPath = path.join(dir, entry.name);
             if (entry.isDirectory()) {
@@ -498,44 +497,6 @@ export class AgentListViewProvider implements vscode.WebviewViewProvider {
         if (bytes < 1024) return `${bytes} B`;
         if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
         return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-    }
-
-    private async openImmediateMemory(agentName: string): Promise<void> {
-        const configuredProjects = this.getConfiguredProjects();
-        const defaultMemoryBaseDir = path.join(this.workspaceRoot, '.agent-projects');
-        const memoryBaseDir = configuredProjects.get(agentName) || defaultMemoryBaseDir;
-
-        const memoryDir = memoryBaseDir.includes(agentName) || configuredProjects.has(agentName)
-            ? memoryBaseDir
-            : path.join(memoryBaseDir, agentName);
-        const immediatePath = path.join(memoryDir, '_immediate.md');
-
-        if (!fs.existsSync(memoryDir)) {
-            fs.mkdirSync(memoryDir, { recursive: true });
-        }
-
-        // Create with template if it doesn't exist yet
-        if (!fs.existsSync(immediatePath)) {
-            const template = [
-                '---',
-                'title: Immediate Memory',
-                'type: immediate',
-                'permalink: _immediate',
-                'tags: [immediate-memory]',
-                '---',
-                '',
-                '# Immediate Memory',
-                '',
-                '> Context-limited scratchpad that survives context compaction.',
-                '> Keep under 5k tokens. Overwrite freely.',
-                '',
-                ''
-            ].join('\n');
-            fs.writeFileSync(immediatePath, template, 'utf-8');
-        }
-
-        const doc = await vscode.workspace.openTextDocument(immediatePath);
-        await vscode.window.showTextDocument(doc);
     }
 
     private async createNewMemory(agentName: string): Promise<void> {
@@ -634,8 +595,7 @@ export class AgentListViewProvider implements vscode.WebviewViewProvider {
     }
 
     .agent-card {
-        margin: 8px 12px;
-        border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
+        margin: 0px 12px;
         border-radius: 0;
         overflow: hidden;
     }
@@ -699,7 +659,7 @@ export class AgentListViewProvider implements vscode.WebviewViewProvider {
         max-height: 2000px;
     }
     .agent-content {
-        padding: 12px;
+        padding-top: 12px;
     }
     .section {
         margin-bottom: 16px;
@@ -913,14 +873,6 @@ export class AgentListViewProvider implements vscode.WebviewViewProvider {
     .mini-btn.delete:hover {
         color: var(--vscode-errorForeground);
     }
-    .memory-item.immediate {
-        border-left: 2px solid var(--vscode-charts-purple, #b180d7);
-        opacity: 0.85;
-    }
-    .memory-item.immediate .icon {
-        color: var(--vscode-charts-purple, #b180d7);
-        opacity: 1;
-    }
     .memory-item.needs-input {
         border-left: 2px solid var(--vscode-notificationsWarningIcon-foreground);
     }
@@ -1006,7 +958,7 @@ export class AgentListViewProvider implements vscode.WebviewViewProvider {
             if (searchQuery) {
                 container.innerHTML = '<div class=\"empty\">No memories found matching \"' + searchQuery + '\"</div>';
             } else {
-                container.innerHTML = '<div class=\"empty\">No agents found. Create a .agent.md file in .github/agents/</div>';
+                container.innerHTML = '<div class=\"empty\">No agents found. Create a subdirectory in .agent-projects/ or run Install.</div>';
             }
             return;
         }
@@ -1044,10 +996,6 @@ export class AgentListViewProvider implements vscode.WebviewViewProvider {
 
             <div class="section">
                 <div class="action-row">
-                    <button class="action-btn" onclick="openFile('\${agent.promptPath}')">
-                        <i data-lucide="file-text" class="icon" style="width:14px;height:14px;"></i>
-                        <span>Open</span>
-                    </button>
                     <button class="action-btn \${agent.paused ? 'warning' : ''}" onclick="togglePause('\${agent.name}')" title="\${agent.paused ? 'Resume memory writes' : 'Pause memory writes'}">
                         <i data-lucide="\${agent.paused ? 'play' : 'pause'}" class="icon" style="width:14px;height:14px;"></i>
                         <span>\${agent.paused ? 'Resume' : 'Pause'}</span>
@@ -1092,16 +1040,6 @@ export class AgentListViewProvider implements vscode.WebviewViewProvider {
                 </div>
                 \${agent.memories.length > 0 ? \`
                 <div class="memory-list">
-                    <div class="memory-item immediate" onclick="openImmediateMemory('\${agent.name}')">
-                        <i data-lucide="message-circle-more" class="icon" style="width:14px;height:14px;"></i>
-                        <span class="memory-name">Immediate memory</span>
-                        <span class="memory-date"></span>
-                        <div class="memory-actions" onclick="event.stopPropagation()">
-                            <button class="mini-btn" onclick="openImmediateMemory('\${agent.name}')" title="Edit">
-                                <i data-lucide="pencil" style="width:13px;height:13px;"></i>
-                            </button>
-                        </div>
-                    </div>
                     \${agent.memories.map(mem => \`
                     <div class="memory-item\${mem.needsHumanInput ? ' needs-input' : ''}" onclick="openFile('\${mem.filepath}')">
                         <i data-lucide="\${mem.needsHumanInput ? 'alert-circle' : 'file-text'}" class="icon\${mem.needsHumanInput ? ' warning-icon' : ''}" style="width:14px;height:14px;"></i>
@@ -1119,19 +1057,7 @@ export class AgentListViewProvider implements vscode.WebviewViewProvider {
                     \`).join('')}
                 </div>
                 \` : \`
-                <div class="memory-list">
-                    <div class="memory-item immediate" onclick="openImmediateMemory('\${agent.name}')">
-                        <i data-lucide="message-circle-more" class="icon" style="width:14px;height:14px;"></i>
-                        <span class="memory-name">Immediate memory</span>
-                        <span class="memory-date"></span>
-                        <div class="memory-actions" onclick="event.stopPropagation()">
-                            <button class="mini-btn" onclick="openImmediateMemory('\${agent.name}')" title="Edit">
-                                <i data-lucide="pencil" style="width:13px;height:13px;"></i>
-                            </button>
-                        </div>
-                    </div>
-                </div>
-                <div class="info-line">No other memories yet</div>
+                <div class="info-line">No memories yet</div>
                 \`}
             </div>
         </div>
@@ -1156,10 +1082,6 @@ export class AgentListViewProvider implements vscode.WebviewViewProvider {
 
     function openFile(path) {
         vscode.postMessage({ type: 'openFile', path });
-    }
-
-    function openImmediateMemory(agentName) {
-        vscode.postMessage({ type: 'openImmediateMemory', agentName });
     }
 
     function deleteMemory(path, filename) {
